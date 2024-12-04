@@ -62,18 +62,21 @@ uint8_t OW_Reset(void)
 	return (PresenceByte != ResetByte ? 1 : 0);
 }
 
-int OW_ScanBus(void)
+bool OW_ScanBus(void)
 {
+	bool retval;
 	int nomatch_mrkr;
-	/*	bool nomatch_last = false;
-	int nomatch_mrkr;
-	 bool retval = false; */
-	int retval;
 	bool done = false;
 	int nomatch_last = 0;
-	do
+	for (;;)
 	{
-		retval = 0;
+		retval = false;
+		if (done)
+		{
+			done = false;
+			return retval;
+		}
+
 		if (!OW_Reset())
 		{
 			nomatch_last = 0;
@@ -81,9 +84,10 @@ int OW_ScanBus(void)
 		}
 
 		uint64_t romcode = 0;
+		nomatch_mrkr = 0;
+		OW_WriteByte(OW_SearchRom);
 		for (int i = 1; i <= 64; i++)
 		{
-			OW_WriteByte(OW_SearchRom);
 			bool bit = OW_ReadBit();
 			bool nbit = OW_ReadBit();
 			if (bit == nbit)  // Discrepancy
@@ -100,16 +104,30 @@ int OW_ScanBus(void)
 						bit = 1;
 						romcode >>= 1;
 						romcode |= 0x8000000000000000;
+						OW_WriteBit(bit);
 					}
-					else if (i > nomatch_last)
+					else
 					{
-						bit = 0;
-						romcode >>= 1;
-						nomatch_mrkr = i;
-					}
-					else if (1)
-					{
+						if (i > nomatch_last)
+						{
+							bit = 0;
+							romcode >>= 1;
+							nomatch_mrkr = i;
+							OW_WriteBit(bit);
+						}
+						else
+						{
+							if (!(romcode & 0x8000000000000000))
+							{
+								nomatch_mrkr = i;
+								OW_WriteBit(false);
+							}
+							else
+							{
+								OW_WriteBit(true);
 
+							}
+						}
 					}
 				}
 			}
@@ -118,12 +136,15 @@ int OW_ScanBus(void)
 				romcode >>= 1;
 				if (bit)
 					romcode |= 0x8000000000000000;
+				OW_WriteBit(bit);
 			}
-			OW_WriteBit(bit);
 		}
-	} while (!done);
-	done = false;
-	return retval;
+		nomatch_last = nomatch_mrkr;
+		if (nomatch_last == 0)
+			done = true;
+		else
+			retval = true;
+	}
 }
 
 void OW_WriteByte(uint8_t data)
